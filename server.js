@@ -14,6 +14,48 @@ const openai = new OpenAI({
 
 const users = new Map();
 
+const tools = [
+  {
+    id: 485,
+    name: "Шуруповёрт Makita",
+    aliases: ["шуруповерт", "шурик", "макита"],
+    holder: null,
+    object: "База"
+  },
+  {
+    id: 322,
+    name: "Перфоратор Bosch",
+    aliases: ["перфоратор", "перф", "bosch"],
+    holder: null,
+    object: "База"
+  },
+  {
+    id: 211,
+    name: "Миксер DLT",
+    aliases: ["миксер"],
+    holder: null,
+    object: "База"
+  },
+  {
+    id: 190,
+    name: "Болгарка DeWalt",
+    aliases: ["болгарка"],
+    holder: null,
+    object: "База"
+  }
+];
+
+function findToolByText(text) {
+  const t = normalize(text);
+
+  return tools.find((tool) => {
+    const inName = normalize(tool.name).includes(t) || t.includes(normalize(tool.name));
+    const inAliases = tool.aliases.some((alias) => t.includes(normalize(alias)));
+    const byId = t.includes(String(tool.id));
+    return inName || inAliases || byId;
+  });
+}
+
 // Временный список пользователей.
 // Потом перенесём это в базу.
 const preregisteredUsers = {
