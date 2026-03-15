@@ -56,6 +56,51 @@ function findToolByText(text) {
   });
 }
 
+function handleToolCommand(text, user) {
+  const t = normalize(text);
+  const tool = findToolByText(text);
+
+  if (!tool) return null;
+
+  // Где инструмент
+  if (t.includes("где")) {
+    if (tool.holder) {
+      return `${tool.name} (${tool.id}) сейчас у ${tool.holder}, объект: ${tool.object}.`;
+    }
+    return `${tool.name} (${tool.id}) сейчас на объекте ${tool.object}. Ответственный не назначен.`;
+  }
+
+  // Взятие инструмента
+  if (t.includes("взял") || t.includes("забрал") || t.includes("беру")) {
+    if (tool.holder) {
+      return `${tool.name} (${tool.id}) уже записан за ${tool.holder}. Два хозяина у одного перфа — это уже беспорядок.`;
+    }
+
+    tool.holder = user.username;
+    tool.object = "На руках";
+
+    return `Записал: ${user.username} взял ${tool.name} (${tool.id}).`;
+  }
+
+  // Возврат инструмента
+  if (t.includes("вернул") || t.includes("сдал")) {
+    if (!tool.holder) {
+      return `${tool.name} (${tool.id}) и так нигде не числится на руках.`;
+    }
+
+    if (tool.holder !== user.username && user.role !== "Арсен") {
+      return `${tool.name} (${tool.id}) записан не на тебя, а на ${tool.holder}. Тут нужна точность.`;
+    }
+
+    tool.holder = null;
+    tool.object = "База";
+
+    return `Принял ${tool.name} (${tool.id}) обратно на Базу. Благодарю за аккуратность.`;
+  }
+
+  return null;
+}
+
 // Временный список пользователей.
 // Потом перенесём это в базу.
 const preregisteredUsers = {
