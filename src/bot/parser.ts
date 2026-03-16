@@ -58,9 +58,15 @@ function parseAddUser(raw: string) {
   if (parts.length < 4) return null;
 
   const roleRaw = parts[2].toLowerCase();
-  const role = roleRaw === "прораб" ? "prorab" : roleRaw === "сотрудник" ? "employee" : null;
 
-  if (!role) return null;
+  let role: "prorab" | "employee";
+  if (roleRaw === "прораб") {
+    role = "prorab";
+  } else if (roleRaw === "сотрудник") {
+    role = "employee";
+  } else {
+    return null;
+  }
 
   return {
     name: parts[0],
