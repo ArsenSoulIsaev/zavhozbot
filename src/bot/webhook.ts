@@ -33,6 +33,7 @@ export const webhookRouter = express.Router();
 const pendingAuth = new Map<number, { userId: number; name: string }>();
 
 async function replyAndOk(res: express.Response, chatId: number, text: string) {
+  console.log("BOT REPLY:", text);
   await sendTelegramMessage(chatId, text);
   return res.status(200).json({ ok: true });
 }
@@ -44,6 +45,8 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
     const from = message?.from;
     const chatId = message?.chat?.id;
 
+    console.log("INCOMING TEXT:", text);
+
     if (!from?.id || !chatId) {
       return res.status(200).json({ ok: true });
     }
@@ -52,6 +55,7 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
     const username = from.username || "";
 
     let knownUser = await findUserByTelegramId(telegramId);
+    console.log("KNOWN USER:", knownUser);
 
     if (!knownUser) {
       const pending = pendingAuth.get(telegramId);
@@ -138,15 +142,18 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
     }
 
     const parsed = parseMessage(text);
+    console.log("PARSED ACTION:", parsed);
 
     if (parsed.type === "where_tool") {
       const tool = await findToolByNameOrAlias(parsed.toolName);
+      console.log("FOUND TOOL:", tool);
 
       if (!tool) {
         return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
       }
 
       const location = await getToolLocation(tool.id);
+      console.log("TOOL LOCATION:", location);
 
       if (!location) {
         return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
@@ -166,6 +173,8 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
 
     if (parsed.type === "where_all") {
       const tools = await listAllTools();
+      console.log("ALL TOOLS COUNT:", tools.length);
+
       const lines = tools.map(
         (tool) =>
           `— ${tool.title} (${tool.id}) · объект: ${tool.object_name || "не указан"} · ответственный: ${tool.responsible_name || "нет"} · статус: ${tool.status}`
@@ -176,6 +185,7 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
 
     if (parsed.type === "take_tool") {
       const tool = await findToolByNameOrAlias(parsed.toolName);
+      console.log("FOUND TOOL:", tool);
 
       if (!tool) {
         return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
@@ -187,6 +197,8 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
         currentObjectId: tool.current_object_id
       });
 
+      console.log("TAKE RESULT:", result);
+
       if (result === "already_taken") {
         return replyAndOk(res, chatId, toolAlreadyTaken(`${tool.title} (${tool.id})`));
       }
@@ -196,6 +208,7 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
 
     if (parsed.type === "return_tool") {
       const tool = await findToolByNameOrAlias(parsed.toolName);
+      console.log("FOUND TOOL:", tool);
 
       if (!tool) {
         return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
@@ -206,6 +219,8 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
         actorUserId: knownUser.id,
         currentObjectId: tool.current_object_id
       });
+
+      console.log("RETURN RESULT:", result);
 
       if (result === "not_in_use") {
         return replyAndOk(res, chatId, toolNotInUse(`${tool.title} (${tool.id})`));
