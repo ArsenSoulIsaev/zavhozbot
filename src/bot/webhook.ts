@@ -325,9 +325,9 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
       reply: `${greet()} ${unknownCommand()}`
     });
   } catch (error) {
-    console.error(error);
+    console.error("WEBHOOK ERROR:", error);
     return res.status(500).json({
-      reply: "Что-то заскрипело в механизме. Надо поправить."
+      ok: false
     });
   }
 });
