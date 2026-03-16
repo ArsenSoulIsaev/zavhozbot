@@ -1,34 +1,58 @@
 import express from "express";
 import { parseMessage } from "./parser.js";
 import {
+  allToolsReply,
   askSecretWord,
   authFail,
   authSuccess,
+  baseCloseForbidden,
+  bulkReturnedToBase,
   greet,
   notRegistered,
+  objectAlreadyClosed,
+  objectClosed,
+  objectNotFound,
+  permissionDenied,
+  toolAdded,
+  toolAlreadyTaken,
+  toolDeleteBlocked,
+  toolDeleted,
+  toolHeldByOther,
   toolLocationReply,
   toolNotFound,
+  toolNotInUse,
   toolReturned,
   toolTaken,
-  toolAlreadyTaken,
-  toolHeldByOther,
-  toolNotInUse,
   unknownCommand
 } from "./replies.js";
 import {
   bindTelegramId,
   findUserByName,
   findUserByTelegramId,
+  needsReauth,
   touchReauth,
-  verifySecretWord,
-  needsReauth
+  verifySecretWord
 } from "../auth/auth.service.js";
 import {
+  canCloseObjects,
+  canManageTools,
+  canViewAll
+} from "../auth/permissions.js";
+import {
+  addTool,
+  deleteTool,
   findToolByNameOrAlias,
   getToolLocation,
+  listAllTools,
+  returnAllToolsFromObject,
   returnTool,
   takeTool
 } from "../tools/tools.service.js";
+import {
+  closeObject,
+  findObjectByName,
+  getBaseObject
+} from "../objects/objects.service.js";
 
 export const webhookRouter = express.Router();
 
@@ -46,10 +70,10 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
     }
 
     const telegramId = from.id;
-    const displayName = from.first_name || from.username || "друг";
+    const displayName = from.username || from.first_name || "друг";
     const parsed = parseMessage(text);
 
-    let knownUser = await findUserByTelegramId(telegramId);
+    const knownUser = await findUserByTelegramId(telegramId);
 
     if (!knownUser) {
       const pending = pendingAuth.get(telegramId);
@@ -120,6 +144,22 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
       });
     }
 
+    if (parsed.type === "where_all") {
+      if (!canViewAll(knownUser)) {
+        return res.status(200).json({ reply: permissionDenied() });
+      }
+
+      const tools = await listAllTools();
+      const lines = tools.map(
+        (tool) =>
+          `— ${tool.title} (${tool.id}) · объект: ${tool.object_name || "не указан"} · ответственный: ${tool.responsible_name || "нет"} · статус: ${tool.status}`
+      );
+
+      return res.status(200).json({
+        reply: allToolsReply(lines)
+      });
+    }
+
     if (parsed.type === "take_tool") {
       const tool = await findToolByNameOrAlias(parsed.toolName);
 
@@ -171,6 +211,107 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
 
       return res.status(200).json({
         reply: toolReturned(`${tool.title} (${tool.id})`)
+      });
+    }
+
+    if (parsed.type === "add_tool") {
+      if (!canManageTools(knownUser)) {
+        return res.status(200).json({ reply: permissionDenied() });
+      }
+
+      const base = await getBaseObject();
+
+      const tool = await addTool({
+        title: parsed.payload.title,
+        aliases: parsed.payload.aliases,
+        family: parsed.payload.family,
+        toolType: parsed.payload.toolType,
+        actorUserId: knownUser.id,
+        baseObjectId: base.id
+      });
+
+      return res.status(200).json({
+        reply: toolAdded(`${tool.title} (${tool.id})`)
+      });
+    }
+
+    if (parsed.type === "delete_tool") {
+      if (!canManageTools(knownUser)) {
+        return res.status(200).json({ reply: permissionDenied() });
+      }
+
+      const tool = await findToolByNameOrAlias(parsed.toolName);
+
+      if (!tool) {
+        return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
+      }
+
+      const result = await deleteTool({
+        toolId: tool.id,
+        actorUserId: knownUser.id,
+        currentObjectId: tool.current_object_id
+      });
+
+      if (result === "in_use") {
+        return res.status(200).json({
+          reply: toolDeleteBlocked(`${tool.title} (${tool.id})`)
+        });
+      }
+
+      return res.status(200).json({
+        reply: toolDeleted(`${tool.title} (${tool.id})`)
+      });
+    }
+
+    if (parsed.type === "close_object") {
+      if (!canCloseObjects(knownUser)) {
+        return res.status(200).json({ reply: permissionDenied() });
+      }
+
+      const object = await findObjectByName(parsed.objectName);
+
+      if (!object) {
+        return res.status(200).json({ reply: objectNotFound(parsed.objectName) });
+      }
+
+      const result = await closeObject({ objectId: object.id });
+
+      if (result === "base_forbidden") {
+        return res.status(200).json({ reply: baseCloseForbidden() });
+      }
+
+      if (result === "already_closed") {
+        return res.status(200).json({
+          reply: objectAlreadyClosed(object.name)
+        });
+      }
+
+      return res.status(200).json({
+        reply: objectClosed(object.name)
+      });
+    }
+
+    if (parsed.type === "return_all_from_object") {
+      if (!canManageTools(knownUser)) {
+        return res.status(200).json({ reply: permissionDenied() });
+      }
+
+      const object = await findObjectByName(parsed.objectName);
+
+      if (!object) {
+        return res.status(200).json({ reply: objectNotFound(parsed.objectName) });
+      }
+
+      const base = await getBaseObject();
+
+      const count = await returnAllToolsFromObject({
+        objectId: object.id,
+        baseObjectId: base.id,
+        actorUserId: knownUser.id
+      });
+
+      return res.status(200).json({
+        reply: bulkReturnedToBase(object.name, count)
       });
     }
 
