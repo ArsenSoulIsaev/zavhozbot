@@ -19,6 +19,14 @@ export interface ToolLocationInfo {
   status: string;
 }
 
+export interface ToolListItem {
+  id: number;
+  title: string;
+  object_name: string | null;
+  responsible_name: string | null;
+  status: string;
+}
+
 export async function findToolByNameOrAlias(name: string): Promise<ToolRow | null> {
   const normalized = name.trim().toLowerCase();
 
@@ -68,6 +76,130 @@ export async function getToolLocation(toolId: number): Promise<ToolLocationInfo 
   );
 
   return result.rows[0] || null;
+}
+
+export async function listAllTools(): Promise<ToolListItem[]> {
+  const result = await query<ToolListItem>(
+    `
+    select
+      t.id,
+      t.title,
+      o.name as object_name,
+      u.name as responsible_name,
+      t.status
+    from tools t
+    left join objects o on o.id = t.current_object_id
+    left join users u on u.id = t.responsible_user_id
+    order by t.title asc, t.id asc
+    `
+  );
+
+  return result.rows;
+}
+
+export async function addTool(params: {
+  title: string;
+  aliases: string[];
+  family: string | null;
+  toolType: string | null;
+  actorUserId: number;
+  baseObjectId: number;
+}): Promise<ToolRow> {
+  const result = await query<ToolRow>(
+    `
+    insert into tools (
+      title,
+      aliases,
+      family,
+      type,
+      current_object_id,
+      responsible_user_id,
+      status
+    )
+    values ($1, $2, $3, $4, $5, null, 'available')
+    returning
+      id,
+      title,
+      aliases,
+      family,
+      type,
+      current_object_id,
+      responsible_user_id,
+      status
+    `,
+    [
+      params.title,
+      params.aliases,
+      params.family,
+      params.toolType,
+      params.baseObjectId
+    ]
+  );
+
+  const tool = result.rows[0];
+
+  await query(
+    `
+    insert into tool_history (
+      tool_id,
+      action,
+      from_object_id,
+      to_object_id,
+      actor_user_id,
+      responsible_user_id,
+      comment
+    )
+    values ($1, 'add', null, $2, $3, null, $4)
+    `,
+    [tool.id, params.baseObjectId, params.actorUserId, "Инструмент добавлен в базу"]
+  );
+
+  return tool;
+}
+
+export async function deleteTool(params: {
+  toolId: number;
+  actorUserId: number;
+  currentObjectId: number | null;
+}): Promise<"ok" | "in_use"> {
+  const current = await query<{ responsible_user_id: number | null; status: string }>(
+    `
+    select responsible_user_id, status
+    from tools
+    where id = $1
+    limit 1
+    `,
+    [params.toolId]
+  );
+
+  const row = current.rows[0];
+  if (!row) {
+    throw new Error("Инструмент не найден");
+  }
+
+  if (row.responsible_user_id !== null || row.status === "in_use") {
+    return "in_use";
+  }
+
+  await query(
+    `
+    insert into tool_history (
+      tool_id,
+      action,
+      from_object_id,
+      to_object_id,
+      actor_user_id,
+      responsible_user_id,
+      comment
+    )
+    values ($1, 'delete', $2, null, $3, null, $4)
+    `,
+    [params.toolId, params.currentObjectId, params.actorUserId, "Инструмент удалён из базы"]
+  );
+
+  await query(`delete from tools where id = $1`, [params.toolId]);
+
+  return "ok";
 }
 
 export async function takeTool(params: {
@@ -188,4 +320,59 @@ export async function returnTool(params: {
   );
 
   return "ok";
+}
+
+export async function returnAllToolsFromObject(params: {
+  objectId: number;
+  baseObjectId: number;
+  actorUserId: number;
+}): Promise<number> {
+  const tools = await query<{
+    id: number;
+    current_object_id: number | null;
+  }>(
+    `
+    select id, current_object_id
+    from tools
+    where current_object_id = $1
+    `,
+    [params.objectId]
+  );
+
+  for (const tool of tools.rows) {
+    await query(
+      `
+      update tools
+      set current_object_id = $1,
+          responsible_user_id = null,
+          status = 'available'
+      where id = $2
+      `,
+      [params.baseObjectId, tool.id]
+    );
+
+    await query(
+      `
+      insert into tool_history (
+        tool_id,
+        action,
+        from_object_id,
+        to_object_id,
+        actor_user_id,
+        responsible_user_id,
+        comment
+      )
+      values ($1, 'bulk_return_to_base', $2, $3, $4, null, $5)
+      `,
+      [
+        tool.id,
+        params.objectId,
+        params.baseObjectId,
+        params.actorUserId,
+        "Инструмент массово возвращён на Базу"
+      ]
+    );
+  }
+
+  return tools.rows.length;
 }
