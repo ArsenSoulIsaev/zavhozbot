@@ -2,6 +2,8 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
+console.log("CONFIG DATABASE_URL exists:", Boolean(process.env.DATABASE_URL));
+
 export const config = {
   port: Number(process.env.PORT || 3000),
   databaseUrl: process.env.DATABASE_URL || "",
