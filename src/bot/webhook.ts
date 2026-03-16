@@ -1,5 +1,17 @@
 import express from "express";
 import { sendTelegramMessage } from "./telegram.js";
+import { parseMessage } from "./parser.js";
+import {
+  allToolsReply,
+  toolAlreadyTaken,
+  toolHeldByOther,
+  toolLocationReply,
+  toolNotFound,
+  toolNotInUse,
+  toolReturned,
+  toolTaken,
+  unknownCommand
+} from "./replies.js";
 import {
   bindTelegramId,
   findUserByTelegramId,
@@ -8,6 +20,13 @@ import {
   touchReauth,
   verifySecretWord
 } from "../auth/auth.service.js";
+import {
+  findToolByNameOrAlias,
+  getToolLocation,
+  listAllTools,
+  returnTool,
+  takeTool
+} from "../tools/tools.service.js";
 
 export const webhookRouter = express.Router();
 
@@ -24,8 +43,6 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
     const text = message?.text?.trim() || "";
     const from = message?.from;
     const chatId = message?.chat?.id;
-
-    console.log("WEBHOOK BODY:", JSON.stringify(req.body));
 
     if (!from?.id || !chatId) {
       return res.status(200).json({ ok: true });
@@ -120,11 +137,88 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
       );
     }
 
-    return replyAndOk(
-      res,
-      chatId,
-      `Харе Кришна, ${knownUser.name}. Я на месте, порядок держу.`
-    );
+    const parsed = parseMessage(text);
+
+    if (parsed.type === "where_tool") {
+      const tool = await findToolByNameOrAlias(parsed.toolName);
+
+      if (!tool) {
+        return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
+      }
+
+      const location = await getToolLocation(tool.id);
+
+      if (!location) {
+        return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
+      }
+
+      return replyAndOk(
+        res,
+        chatId,
+        toolLocationReply({
+          title: `${location.title} (${location.id})`,
+          objectName: location.object_name,
+          responsibleName: location.responsible_name,
+          status: location.status
+        })
+      );
+    }
+
+    if (parsed.type === "where_all") {
+      const tools = await listAllTools();
+      const lines = tools.map(
+        (tool) =>
+          `— ${tool.title} (${tool.id}) · объект: ${tool.object_name || "не указан"} · ответственный: ${tool.responsible_name || "нет"} · статус: ${tool.status}`
+      );
+
+      return replyAndOk(res, chatId, allToolsReply(lines));
+    }
+
+    if (parsed.type === "take_tool") {
+      const tool = await findToolByNameOrAlias(parsed.toolName);
+
+      if (!tool) {
+        return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
+      }
+
+      const result = await takeTool({
+        toolId: tool.id,
+        actorUserId: knownUser.id,
+        currentObjectId: tool.current_object_id
+      });
+
+      if (result === "already_taken") {
+        return replyAndOk(res, chatId, toolAlreadyTaken(`${tool.title} (${tool.id})`));
+      }
+
+      return replyAndOk(res, chatId, toolTaken(`${tool.title} (${tool.id})`));
+    }
+
+    if (parsed.type === "return_tool") {
+      const tool = await findToolByNameOrAlias(parsed.toolName);
+
+      if (!tool) {
+        return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
+      }
+
+      const result = await returnTool({
+        toolId: tool.id,
+        actorUserId: knownUser.id,
+        currentObjectId: tool.current_object_id
+      });
+
+      if (result === "not_in_use") {
+        return replyAndOk(res, chatId, toolNotInUse(`${tool.title} (${tool.id})`));
+      }
+
+      if (result === "held_by_other") {
+        return replyAndOk(res, chatId, toolHeldByOther(`${tool.title} (${tool.id})`));
+      }
+
+      return replyAndOk(res, chatId, toolReturned(`${tool.title} (${tool.id})`));
+    }
+
+    return replyAndOk(res, chatId, unknownCommand(knownUser.name));
   } catch (error) {
     console.error("WEBHOOK ERROR:", error);
     return res.status(500).json({ ok: false });
