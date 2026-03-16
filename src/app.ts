@@ -1,3 +1,5 @@
+console.log("APP VERSION: webhook-v2-tools");
+
 import express from "express";
 import { config } from "./config.js";
 import { webhookRouter } from "./bot/webhook.js";
