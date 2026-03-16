@@ -1,3 +1,7 @@
+export function permissionDenied(): string {
+  return "На это у тебя полномочий нет. Тут нужен прораб или Арсен.";
+}
+
 export function toolNotFound(toolName: string): string {
   return `Не нахожу инструмент «${toolName}». Название надо поточнее, чтобы в учёте не было тумана.`;
 }
@@ -28,20 +32,59 @@ export function toolLocationReply(params: {
   responsibleName: string | null;
   status: string;
 }): string {
-  const objectPart = params.objectName || "объект не указан";
-  const responsiblePart = params.responsibleName || "никто не назначен";
-
-  return `${params.title} сейчас числится на объекте «${objectPart}», ответственный: ${responsiblePart}, статус: ${params.status}.`;
+  return `${params.title} сейчас числится на объекте «${params.objectName || "не указан"}», ответственный: ${params.responsibleName || "никто не назначен"}, статус: ${params.status}.`;
 }
 
-export function allToolsReply(lines: string[]): string {
-  if (!lines.length) {
-    return "Пока инструментов в учёте не вижу.";
-  }
+export function toolsListReply(title: string, lines: string[]): string {
+  if (!lines.length) return `${title}\nПока пусто.`;
 
-  return ["Вот что у меня сейчас числится:", ...lines].join("\n");
+  return [title, ...lines].join("\n");
+}
+
+export function toolAdded(title: string): string {
+  return `${title} добавил в Базу. Теперь инструмент стоит на учёте как положено.`;
+}
+
+export function toolDeleted(title: string): string {
+  return `${title} убрал из базы. Всё отметил в истории.`;
+}
+
+export function toolDeleteBlocked(title: string): string {
+  return `${title} сейчас в работе. Пока инструмент не вернётся, удалять его нельзя.`;
+}
+
+export function objectCreated(name: string): string {
+  return `Объект «${name}» создал. Теперь его можно делать активным.`;
+}
+
+export function objectActivated(name: string): string {
+  return `Объект «${name}» сделал активным.`;
+}
+
+export function objectClosed(name: string): string {
+  return `Объект «${name}» закрыл. Активной снова стала «База».`;
+}
+
+export function objectAlreadyClosed(name: string): string {
+  return `Объект «${name}» уже был закрыт раньше.`;
+}
+
+export function objectNotFound(name: string): string {
+  return `Объект «${name}» у меня не найден. Проверь название без суеты.`;
+}
+
+export function baseCloseForbidden(): string {
+  return "«Базу» закрывать нельзя. На то она и База, чтобы держать опору.";
+}
+
+export function bulkReturnedToBase(objectName: string, count: number): string {
+  return `С объекта «${objectName}» вернул на Базу ${count} шт. Всё записал, хвостов не оставил.`;
+}
+
+export function userAdded(name: string, username: string, role: string): string {
+  return `${name} (@${username}) добавлен, роль: ${role}. Теперь человек сможет пройти первую проверку.`;
 }
 
 export function unknownCommand(name: string): string {
-  return `${name}, смысл уловил не до конца. Напиши проще: «где перф», «я взял перф», «я вернул перф», «где всё».`;
+  return `${name}, смысл уловил не до конца. Напиши проще.`;
 }
