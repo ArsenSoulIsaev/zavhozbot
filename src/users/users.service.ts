@@ -1,16 +1,33 @@
+import * as bcrypt from "bcrypt";
 import { query } from "../db.js";
-import type { AuthUser } from "../types/index.js";
 
-export async function getUserById(userId: number): Promise<AuthUser | null> {
-  const result = await query<AuthUser>(
+export async function createUser(params: {
+  name: string;
+  telegramUsername: string;
+  role: "prorab" | "employee";
+  secretWord: string;
+}) {
+  const hash = await bcrypt.hash(params.secretWord, 10);
+
+  const result = await query<{
+    id: number;
+    name: string;
+    telegram_username: string;
+    role: string;
+  }>(
     `
-    select id, telegram_id, name, role, is_verified, last_reauth_at
-    from users
-    where id = $1
-    limit 1
+    insert into users (
+      name,
+      telegram_username,
+      role,
+      secret_word_hash,
+      is_verified
+    )
+    values ($1, $2, $3, $4, false)
+    returning id, name, telegram_username, role
     `,
-    [userId]
+    [params.name, params.telegramUsername, params.role, hash]
   );
 
-  return result.rows[0] || null;
+  return result.rows[0];
 }
