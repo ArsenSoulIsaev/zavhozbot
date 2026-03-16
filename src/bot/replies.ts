@@ -57,3 +57,47 @@ export function toolLocationReply(params: {
 export function unknownCommand(): string {
   return "Смысл уловил не до конца. Напиши проще: «взял перф», «вернул болгарку» или «где шурик».";
 }
+
+export function permissionDenied(): string {
+  return "На это у тебя полномочий нет. Тут нужен прораб или Арсен.";
+}
+
+export function toolAdded(title: string): string {
+  return `${title} добавил в Базу. Теперь инструмент стоит на учёте как положено.`;
+}
+
+export function toolDeleted(title: string): string {
+  return `${title} убрал из базы. Всё отметил в истории.`;
+}
+
+export function toolDeleteBlocked(title: string): string {
+  return `${title} сейчас в работе. Пока инструмент не вернётся, удалять его нельзя.`;
+}
+
+export function objectNotFound(name: string): string {
+  return `Объект «${name}» у меня не найден. Проверь название без суеты.`;
+}
+
+export function objectClosed(name: string): string {
+  return `Объект «${name}» закрыл. Активной снова стала «База».`;
+}
+
+export function objectAlreadyClosed(name: string): string {
+  return `Объект «${name}» уже был закрыт раньше.`;
+}
+
+export function baseCloseForbidden(): string {
+  return "«Базу» закрывать нельзя. На то она и База, чтобы держать опору.";
+}
+
+export function allToolsReply(lines: string[]): string {
+  if (!lines.length) {
+    return "Пока инструментов в учёте не вижу.";
+  }
+
+  return ["Вот что у меня сейчас числится:", ...lines].join("\n");
+}
+
+export function bulkReturnedToBase(objectName: string, count: number): string {
+  return `С объекта «${objectName}» вернул на Базу ${count} шт. Всё записал, хвостов не оставил.`;
+}
