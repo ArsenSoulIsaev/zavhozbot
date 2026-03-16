@@ -181,7 +181,24 @@ app.post("/webhook", async (req, res) => {
       return;
     }
 
-    // Уже проверенный пользователь — можно общаться дальше
+    // Уже проверенный пользователь — сначала проверяем учёт инструментов
+    const toolReply = handleToolCommand(text, user);
+
+    if (toolReply) {
+      await fetch(`https://api.telegram.org/bot${TOKEN}/sendMessage`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: toolReply
+        })
+      });
+      return;
+    }
+
+    // Если это не команда по инструментам — тогда обычный разговор через OpenAI
     const response = await openai.responses.create({
       model: "gpt-5",
       input: [
@@ -191,7 +208,8 @@ app.post("/webhook", async (req, res) => {
             "Ты МахаЗавхоз. Отвечай по-русски. Коротко, живо, по-человечески. " +
             "Ты доброжелательный завхоз, любишь порядок. " +
             "Пользователь уже прошёл идентификацию. " +
-            "Не говори 'операция выполнена'. Используй живые фразы: 'записал', 'отметил', 'принял'."
+            "Не говори 'операция выполнена'. Используй живые фразы: 'записал', 'отметил', 'принял'. " +
+            "Если сообщение похоже на учёт инструмента, но система его не распознала, не выдумывай данные."
         },
         {
           role: "user",
@@ -212,10 +230,6 @@ app.post("/webhook", async (req, res) => {
         text: answer
       })
     });
-  } catch (error) {
-    console.error(error);
-  }
-});
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server started on ${PORT}`);
