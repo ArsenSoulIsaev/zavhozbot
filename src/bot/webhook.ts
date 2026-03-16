@@ -144,35 +144,35 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
       });
     }
 
-if (parsed.type === "return_tool") {
-  const tool = await findToolByNameOrAlias(parsed.toolName);
+    if (parsed.type === "return_tool") {
+      const tool = await findToolByNameOrAlias(parsed.toolName);
 
-  if (!tool) {
-    return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
-  }
+      if (!tool) {
+        return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
+      }
 
-  const result = await returnTool({
-    toolId: tool.id,
-    actorUserId: knownUser.id,
-    currentObjectId: tool.current_object_id
-  });
+      const result = await returnTool({
+        toolId: tool.id,
+        actorUserId: knownUser.id,
+        currentObjectId: tool.current_object_id
+      });
 
-  if (result === "not_in_use") {
-    return res.status(200).json({
-      reply: toolNotInUse(`${tool.title} (${tool.id})`)
-    });
-  }
+      if (result === "not_in_use") {
+        return res.status(200).json({
+          reply: toolNotInUse(`${tool.title} (${tool.id})`)
+        });
+      }
 
-  if (result === "held_by_other") {
-    return res.status(200).json({
-      reply: toolHeldByOther(`${tool.title} (${tool.id})`)
-    });
-  }
+      if (result === "held_by_other") {
+        return res.status(200).json({
+          reply: toolHeldByOther(`${tool.title} (${tool.id})`)
+        });
+      }
 
-  return res.status(200).json({
-    reply: toolReturned(`${tool.title} (${tool.id})`)
-  });
-}
+      return res.status(200).json({
+        reply: toolReturned(`${tool.title} (${tool.id})`)
+      });
+    }
 
     return res.status(200).json({
       reply: `${greet()} ${unknownCommand()}`
