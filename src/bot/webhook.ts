@@ -20,7 +20,7 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
       return res.status(200).json({ ok: true });
     }
 
-    const telegramId = String(from.id);
+    const telegramId = from.id;
     const username = from.username || "";
 
     // 1. ищем пользователя по telegram_id
