@@ -27,7 +27,7 @@ import {
 } from "./replies.js";
 import {
   bindTelegramId,
-  findUserByName,
+  findUserByTelegramUsername,
   findUserByTelegramId,
   needsReauth,
   touchReauth,
@@ -70,7 +70,7 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
     }
 
     const telegramId = from.id;
-    const displayName = from.username || from.first_name || "друг";
+    const telegramUsername = from.username || "";
     const parsed = parseMessage(text);
 
     const knownUser = await findUserByTelegramId(telegramId);
@@ -91,7 +91,13 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
         return res.status(200).json({ reply: authSuccess(pending.name) });
       }
 
-      const candidate = await findUserByName(displayName);
+      if (!telegramUsername) {
+        return res.status(200).json({
+          reply: "У тебя в Telegram не вижу username. Без него первичную привязку лучше не делать. Пусть Арсен заведёт тебя правильно."
+        });
+      }
+
+      const candidate = await findUserByTelegramUsername(telegramUsername);
 
       if (!candidate) {
         return res.status(200).json({ reply: notRegistered() });
