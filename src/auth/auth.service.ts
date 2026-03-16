@@ -15,13 +15,15 @@ export async function findUserByTelegramId(telegramId: number): Promise<AuthUser
   return result.rows[0] || null;
 }
 
-export async function findUserByName(name: string): Promise<AuthUser | null> {
+export async function findUserByTelegramUsername(username: string): Promise<AuthUser | null> {
   const result = await query<AuthUser>(
-    `select id, telegram_id, name, role, is_verified, last_reauth_at
-     from users
-     where lower(name) = lower($1)
-     limit 1`,
-    [name]
+    `
+    select id, telegram_id, name, role, is_verified, last_reauth_at
+    from users
+    where lower(telegram_username) = lower($1)
+    limit 1
+    `,
+    [username]
   );
 
   return result.rows[0] || null;
