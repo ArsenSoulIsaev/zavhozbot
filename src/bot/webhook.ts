@@ -1,20 +1,31 @@
 import express from "express";
 import { sendTelegramMessage } from "./telegram.js";
 import {
+  bindTelegramId,
   findUserByTelegramId,
   findUserByTelegramUsername,
-  bindTelegramId,
+  needsReauth,
+  touchReauth,
   verifySecretWord
 } from "../auth/auth.service.js";
 
 export const webhookRouter = express.Router();
 
+const pendingAuth = new Map<number, { userId: number; name: string }>();
+
+async function replyAndOk(res: express.Response, chatId: number, text: string) {
+  await sendTelegramMessage(chatId, text);
+  return res.status(200).json({ ok: true });
+}
+
 webhookRouter.post("/telegram/webhook", async (req, res) => {
   try {
     const message = req.body?.message;
-    const text = message?.text?.trim();
+    const text = message?.text?.trim() || "";
     const from = message?.from;
     const chatId = message?.chat?.id;
+
+    console.log("WEBHOOK BODY:", JSON.stringify(req.body));
 
     if (!from?.id || !chatId) {
       return res.status(200).json({ ok: true });
@@ -23,64 +34,97 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
     const telegramId = from.id;
     const username = from.username || "";
 
-    // 1. ищем пользователя по telegram_id
-    let user = await findUserByTelegramId(telegramId);
+    let knownUser = await findUserByTelegramId(telegramId);
 
-    // 2. если нет — ищем по username
-    if (!user && username) {
-      const byUsername = await findUserByTelegramUsername(username);
+    if (!knownUser) {
+      const pending = pendingAuth.get(telegramId);
 
-      if (byUsername) {
-        await bindTelegramId(byUsername.id, telegramId);
-        user = byUsername;
-      }
-    }
+      if (pending) {
+        const ok = await verifySecretWord(pending.userId, text);
 
-    // 3. если пользователя нет
-    if (!user) {
-      await sendTelegramMessage(
-        chatId,
-        "Харе Кришна. Я тебя пока не знаю. Арсен должен добавить тебя в систему."
-      );
-      return res.status(200).json({ ok: true });
-    }
+        if (!ok) {
+          return replyAndOk(
+            res,
+            chatId,
+            "Секретное слово не сошлось. Проверь спокойно и напиши ещё раз."
+          );
+        }
 
-    // 4. если не прошёл проверку
-    if (!user.is_verified) {
-      if (!text) {
-        await sendTelegramMessage(
+        await bindTelegramId(pending.userId, telegramId);
+        pendingAuth.delete(telegramId);
+
+        return replyAndOk(
+          res,
           chatId,
-          "Назови своё секретное слово."
+          `${pending.name}, признал тебя. Доступ открыл, всё учёл.`
         );
-        return res.status(200).json({ ok: true });
       }
 
-      const ok = await verifySecretWord(user.id, text);
+      if (!username) {
+        return replyAndOk(
+          res,
+          chatId,
+          "У тебя в Telegram не вижу username. Пусть Арсен сначала заведёт тебя правильно."
+        );
+      }
+
+      const candidate = await findUserByTelegramUsername(username);
+
+      if (!candidate) {
+        return replyAndOk(
+          res,
+          chatId,
+          "Тебя у меня в списке пока нет. Пусть Арсен добавит тебя в систему."
+        );
+      }
+
+      pendingAuth.set(telegramId, { userId: candidate.id, name: candidate.name });
+
+      return replyAndOk(
+        res,
+        chatId,
+        "Назови своё секретное слово. Без этого в кладовую учёта не пущу."
+      );
+    }
+
+    if (needsReauth(knownUser.last_reauth_at)) {
+      const pending = pendingAuth.get(telegramId);
+
+      if (!pending) {
+        pendingAuth.set(telegramId, { userId: knownUser.id, name: knownUser.name });
+
+        return replyAndOk(
+          res,
+          chatId,
+          `Хари Хари, ${knownUser.name}. Пора освежить память. Назови секретное слово.`
+        );
+      }
+
+      const ok = await verifySecretWord(knownUser.id, text);
 
       if (!ok) {
-        await sendTelegramMessage(
+        return replyAndOk(
+          res,
           chatId,
-          "Секретное слово не подошло."
+          "Секретное слово не сошлось. Проверь спокойно и напиши ещё раз."
         );
-        return res.status(200).json({ ok: true });
       }
 
-      await sendTelegramMessage(
-        chatId,
-        "Принял. Доступ открыт."
-      );
+      pendingAuth.delete(telegramId);
+      await touchReauth(knownUser.id);
 
-      return res.status(200).json({ ok: true });
+      return replyAndOk(
+        res,
+        chatId,
+        `${knownUser.name}, всё сходится. Работаем дальше.`
+      );
     }
 
-    // 5. если пользователь уже авторизован
-    await sendTelegramMessage(
+    return replyAndOk(
+      res,
       chatId,
-      "Харе Кришна. Я на месте, порядок держу."
+      `Харе Кришна, ${knownUser.name}. Я на месте, порядок держу.`
     );
-
-    return res.status(200).json({ ok: true });
-
   } catch (error) {
     console.error("WEBHOOK ERROR:", error);
     return res.status(500).json({ ok: false });
