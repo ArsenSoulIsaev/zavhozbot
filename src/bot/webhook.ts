@@ -1,3 +1,5 @@
+console.log("WEBHOOK VERSION: webhook-v2-tools");
+
 import express from "express";
 import { sendTelegramMessage } from "./telegram.js";
 import { parseMessage } from "./parser.js";
