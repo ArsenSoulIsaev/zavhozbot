@@ -30,6 +30,18 @@ export function toolReturned(title: string): string {
   return `${title} принял обратно. Благодарю за аккуратность, так держится порядок.`;
 }
 
+export function toolAlreadyTaken(title: string): string {
+  return `${title} уже числится в работе. Инструмент один, а желающих обычно больше.`;
+}
+
+export function toolNotInUse(title: string): string {
+  return `${title} и так уже отмечен как возвращённый.`;
+}
+
+export function toolHeldByOther(title: string): string {
+  return `${title} числится не за тобой. Сначала разберёмся, у кого он на руках, потом всё выправим.`;
+}
+
 export function toolLocationReply(params: {
   title: string;
   objectName: string | null;
