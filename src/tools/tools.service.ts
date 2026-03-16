@@ -97,6 +97,27 @@ export async function listAllTools(): Promise<ToolListItem[]> {
   return result.rows;
 }
 
+export async function listMyTools(userId: number): Promise<ToolListItem[]> {
+  const result = await query<ToolListItem>(
+    `
+    select
+      t.id,
+      t.title,
+      o.name as object_name,
+      u.name as responsible_name,
+      t.status
+    from tools t
+    left join objects o on o.id = t.current_object_id
+    left join users u on u.id = t.responsible_user_id
+    where t.responsible_user_id = $1
+    order by t.title asc, t.id asc
+    `,
+    [userId]
+  );
+
+  return result.rows;
+}
+
 export async function addTool(params: {
   title: string;
   aliases: string[];
@@ -127,13 +148,7 @@ export async function addTool(params: {
       responsible_user_id,
       status
     `,
-    [
-      params.title,
-      params.aliases,
-      params.family,
-      params.toolType,
-      params.baseObjectId
-    ]
+    [params.title, params.aliases, params.family, params.toolType, params.baseObjectId]
   );
 
   const tool = result.rows[0];
@@ -173,13 +188,9 @@ export async function deleteTool(params: {
   );
 
   const row = current.rows[0];
-  if (!row) {
-    throw new Error("Инструмент не найден");
-  }
+  if (!row) throw new Error("Инструмент не найден");
 
-  if (row.responsible_user_id !== null || row.status === "in_use") {
-    return "in_use";
-  }
+  if (row.responsible_user_id !== null || row.status === "in_use") return "in_use";
 
   await query(
     `
@@ -218,13 +229,9 @@ export async function takeTool(params: {
   );
 
   const row = current.rows[0];
-  if (!row) {
-    throw new Error("Инструмент не найден");
-  }
+  if (!row) throw new Error("Инструмент не найден");
 
-  if (row.responsible_user_id !== null || row.status === "in_use") {
-    return "already_taken";
-  }
+  if (row.responsible_user_id !== null || row.status === "in_use") return "already_taken";
 
   await query(
     `
@@ -249,12 +256,7 @@ export async function takeTool(params: {
     )
     values ($1, 'take', $2, $2, $3, $3, $4)
     `,
-    [
-      params.toolId,
-      params.currentObjectId,
-      params.actorUserId,
-      "Инструмент взят в работу"
-    ]
+    [params.toolId, params.currentObjectId, params.actorUserId, "Инструмент взят в работу"]
   );
 
   return "ok";
@@ -276,17 +278,10 @@ export async function returnTool(params: {
   );
 
   const row = current.rows[0];
-  if (!row) {
-    throw new Error("Инструмент не найден");
-  }
+  if (!row) throw new Error("Инструмент не найден");
 
-  if (row.responsible_user_id === null || row.status === "available") {
-    return "not_in_use";
-  }
-
-  if (row.responsible_user_id !== params.actorUserId) {
-    return "held_by_other";
-  }
+  if (row.responsible_user_id === null || row.status === "available") return "not_in_use";
+  if (row.responsible_user_id !== params.actorUserId) return "held_by_other";
 
   await query(
     `
@@ -311,15 +306,42 @@ export async function returnTool(params: {
     )
     values ($1, 'return', $2, $2, $3, null, $4)
     `,
-    [
-      params.toolId,
-      params.currentObjectId,
-      params.actorUserId,
-      "Инструмент возвращён"
-    ]
+    [params.toolId, params.currentObjectId, params.actorUserId, "Инструмент возвращён"]
   );
 
   return "ok";
+}
+
+export async function moveToolToObject(params: {
+  toolId: number;
+  actorUserId: number;
+  fromObjectId: number | null;
+  toObjectId: number;
+}): Promise<void> {
+  await query(
+    `
+    update tools
+    set current_object_id = $1
+    where id = $2
+    `,
+    [params.toObjectId, params.toolId]
+  );
+
+  await query(
+    `
+    insert into tool_history (
+      tool_id,
+      action,
+      from_object_id,
+      to_object_id,
+      actor_user_id,
+      responsible_user_id,
+      comment
+    )
+    values ($1, 'move', $2, $3, $4, null, $5)
+    `,
+    [params.toolId, params.fromObjectId, params.toObjectId, params.actorUserId, "Инструмент перемещён на объект"]
+  );
 }
 
 export async function returnAllToolsFromObject(params: {
@@ -327,12 +349,9 @@ export async function returnAllToolsFromObject(params: {
   baseObjectId: number;
   actorUserId: number;
 }): Promise<number> {
-  const tools = await query<{
-    id: number;
-    current_object_id: number | null;
-  }>(
+  const tools = await query<{ id: number }>(
     `
-    select id, current_object_id
+    select id
     from tools
     where current_object_id = $1
     `,
@@ -364,13 +383,7 @@ export async function returnAllToolsFromObject(params: {
       )
       values ($1, 'bulk_return_to_base', $2, $3, $4, null, $5)
       `,
-      [
-        tool.id,
-        params.objectId,
-        params.baseObjectId,
-        params.actorUserId,
-        "Инструмент массово возвращён на Базу"
-      ]
+      [tool.id, params.objectId, params.baseObjectId, params.actorUserId, "Инструмент массово возвращён на Базу"]
     );
   }
 
