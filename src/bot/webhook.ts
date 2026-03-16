@@ -10,6 +10,9 @@ import {
   toolNotFound,
   toolReturned,
   toolTaken,
+  toolAlreadyTaken,
+  toolHeldByOther,
+  toolNotInUse,
   unknownCommand
 } from "./replies.js";
 import {
