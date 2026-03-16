@@ -127,34 +127,52 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
         return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
       }
 
-      await takeTool({
+      const result = await takeTool({
         toolId: tool.id,
         actorUserId: knownUser.id,
         currentObjectId: tool.current_object_id
       });
+
+      if (result === "already_taken") {
+        return res.status(200).json({
+          reply: toolAlreadyTaken(`${tool.title} (${tool.id})`)
+        });
+      }
 
       return res.status(200).json({
         reply: toolTaken(`${tool.title} (${tool.id})`)
       });
     }
 
-    if (parsed.type === "return_tool") {
-      const tool = await findToolByNameOrAlias(parsed.toolName);
+if (parsed.type === "return_tool") {
+  const tool = await findToolByNameOrAlias(parsed.toolName);
 
-      if (!tool) {
-        return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
-      }
+  if (!tool) {
+    return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
+  }
 
-      await returnTool({
-        toolId: tool.id,
-        actorUserId: knownUser.id,
-        currentObjectId: tool.current_object_id
-      });
+  const result = await returnTool({
+    toolId: tool.id,
+    actorUserId: knownUser.id,
+    currentObjectId: tool.current_object_id
+  });
 
-      return res.status(200).json({
-        reply: toolReturned(`${tool.title} (${tool.id})`)
-      });
-    }
+  if (result === "not_in_use") {
+    return res.status(200).json({
+      reply: toolNotInUse(`${tool.title} (${tool.id})`)
+    });
+  }
+
+  if (result === "held_by_other") {
+    return res.status(200).json({
+      reply: toolHeldByOther(`${tool.title} (${tool.id})`)
+    });
+  }
+
+  return res.status(200).json({
+    reply: toolReturned(`${tool.title} (${tool.id})`)
+  });
+}
 
     return res.status(200).json({
       reply: `${greet()} ${unknownCommand()}`
