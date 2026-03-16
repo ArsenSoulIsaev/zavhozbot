@@ -1,243 +1,90 @@
-console.log("WEBHOOK VERSION: webhook-v2-tools");
-
-import express from "express";
-import { sendTelegramMessage } from "./telegram.js";
-import { parseMessage } from "./parser.js";
-import {
-  allToolsReply,
-  toolAlreadyTaken,
-  toolHeldByOther,
-  toolLocationReply,
-  toolNotFound,
-  toolNotInUse,
-  toolReturned,
-  toolTaken,
-  unknownCommand
-} from "./replies.js";
-import {
-  bindTelegramId,
-  findUserByTelegramId,
-  findUserByTelegramUsername,
-  needsReauth,
-  touchReauth,
-  verifySecretWord
-} from "../auth/auth.service.js";
-import {
-  findToolByNameOrAlias,
-  getToolLocation,
-  listAllTools,
-  returnTool,
-  takeTool
-} from "../tools/tools.service.js";
-
-export const webhookRouter = express.Router();
-
-const pendingAuth = new Map<number, { userId: number; name: string }>();
-
-async function replyAndOk(res: express.Response, chatId: number, text: string) {
-  console.log("BOT REPLY:", text);
-  await sendTelegramMessage(chatId, text);
-  return res.status(200).json({ ok: true });
+export function permissionDenied(): string {
+  return "На это у тебя полномочий нет. Тут нужен прораб или Арсен.";
 }
 
-webhookRouter.post("/telegram/webhook", async (req, res) => {
-  try {
-    const message = req.body?.message;
-    const text = message?.text?.trim() || "";
-    const from = message?.from;
-    const chatId = message?.chat?.id;
+export function toolNotFound(toolName: string): string {
+  return `Не нахожу инструмент «${toolName}». Название надо поточнее, чтобы в учёте не было тумана.`;
+}
 
-    console.log("INCOMING TEXT:", text);
+export function toolTaken(title: string): string {
+  return `${title} записал за тобой. Пользуйся аккуратно и потом верни по-человечески.`;
+}
 
-    if (!from?.id || !chatId) {
-      return res.status(200).json({ ok: true });
-    }
+export function toolReturned(title: string): string {
+  return `${title} принял обратно. Благодарю за аккуратность, так держится порядок.`;
+}
 
-    const telegramId = from.id;
-    const username = from.username || "";
+export function toolAlreadyTaken(title: string): string {
+  return `${title} уже числится в работе. Инструмент один, а рук вокруг много.`;
+}
 
-    let knownUser = await findUserByTelegramId(telegramId);
-    console.log("KNOWN USER:", knownUser);
+export function toolNotInUse(title: string): string {
+  return `${title} и так уже отмечен как возвращённый.`;
+}
 
-    if (!knownUser) {
-      const pending = pendingAuth.get(telegramId);
+export function toolHeldByOther(title: string): string {
+  return `${title} числится не за тобой. Сначала разберёмся, у кого он на руках.`;
+}
 
-      if (pending) {
-        const ok = await verifySecretWord(pending.userId, text);
+export function toolLocationReply(params: {
+  title: string;
+  objectName: string | null;
+  responsibleName: string | null;
+  status: string;
+}): string {
+  return `${params.title} сейчас числится на объекте «${params.objectName || "не указан"}», ответственный: ${params.responsibleName || "никто не назначен"}, статус: ${params.status}.`;
+}
 
-        if (!ok) {
-          return replyAndOk(
-            res,
-            chatId,
-            "Секретное слово не сошлось. Проверь спокойно и напиши ещё раз."
-          );
-        }
+export function toolsListReply(title: string, lines: string[]): string {
+  if (!lines.length) return `${title}\nПока пусто.`;
 
-        await bindTelegramId(pending.userId, telegramId);
-        pendingAuth.delete(telegramId);
+  return [title, ...lines].join("\n");
+}
 
-        return replyAndOk(
-          res,
-          chatId,
-          `${pending.name}, признал тебя. Доступ открыл, всё учёл.`
-        );
-      }
+export function toolAdded(title: string): string {
+  return `${title} добавил в Базу. Теперь инструмент стоит на учёте как положено.`;
+}
 
-      if (!username) {
-        return replyAndOk(
-          res,
-          chatId,
-          "У тебя в Telegram не вижу username. Пусть Арсен сначала заведёт тебя правильно."
-        );
-      }
+export function toolDeleted(title: string): string {
+  return `${title} убрал из базы. Всё отметил в истории.`;
+}
 
-      const candidate = await findUserByTelegramUsername(username);
+export function toolDeleteBlocked(title: string): string {
+  return `${title} сейчас в работе. Пока инструмент не вернётся, удалять его нельзя.`;
+}
 
-      if (!candidate) {
-        return replyAndOk(
-          res,
-          chatId,
-          "Тебя у меня в списке пока нет. Пусть Арсен добавит тебя в систему."
-        );
-      }
+export function objectCreated(name: string): string {
+  return `Объект «${name}» создал. Теперь его можно делать активным.`;
+}
 
-      pendingAuth.set(telegramId, { userId: candidate.id, name: candidate.name });
+export function objectActivated(name: string): string {
+  return `Объект «${name}» сделал активным.`;
+}
 
-      return replyAndOk(
-        res,
-        chatId,
-        "Назови своё секретное слово. Без этого в кладовую учёта не пущу."
-      );
-    }
+export function objectClosed(name: string): string {
+  return `Объект «${name}» закрыл. Активной снова стала «База».`;
+}
 
-    if (needsReauth(knownUser.last_reauth_at)) {
-      const pending = pendingAuth.get(telegramId);
+export function objectAlreadyClosed(name: string): string {
+  return `Объект «${name}» уже был закрыт раньше.`;
+}
 
-      if (!pending) {
-        pendingAuth.set(telegramId, { userId: knownUser.id, name: knownUser.name });
+export function objectNotFound(name: string): string {
+  return `Объект «${name}» у меня не найден. Проверь название без суеты.`;
+}
 
-        return replyAndOk(
-          res,
-          chatId,
-          `Хари Хари, ${knownUser.name}. Пора освежить память. Назови секретное слово.`
-        );
-      }
+export function baseCloseForbidden(): string {
+  return "«Базу» закрывать нельзя. На то она и База, чтобы держать опору.";
+}
 
-      const ok = await verifySecretWord(knownUser.id, text);
+export function bulkReturnedToBase(objectName: string, count: number): string {
+  return `С объекта «${objectName}» вернул на Базу ${count} шт. Всё записал, хвостов не оставил.`;
+}
 
-      if (!ok) {
-        return replyAndOk(
-          res,
-          chatId,
-          "Секретное слово не сошлось. Проверь спокойно и напиши ещё раз."
-        );
-      }
+export function userAdded(name: string, username: string, role: string): string {
+  return `${name} (@${username}) добавлен, роль: ${role}. Теперь человек сможет пройти первую проверку.`;
+}
 
-      pendingAuth.delete(telegramId);
-      await touchReauth(knownUser.id);
-
-      return replyAndOk(
-        res,
-        chatId,
-        `${knownUser.name}, всё сходится. Работаем дальше.`
-      );
-    }
-
-    const parsed = parseMessage(text);
-    console.log("PARSED ACTION:", parsed);
-
-    if (parsed.type === "where_tool") {
-      const tool = await findToolByNameOrAlias(parsed.toolName);
-      console.log("FOUND TOOL:", tool);
-
-      if (!tool) {
-        return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
-      }
-
-      const location = await getToolLocation(tool.id);
-      console.log("TOOL LOCATION:", location);
-
-      if (!location) {
-        return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
-      }
-
-      return replyAndOk(
-        res,
-        chatId,
-        toolLocationReply({
-          title: `${location.title} (${location.id})`,
-          objectName: location.object_name,
-          responsibleName: location.responsible_name,
-          status: location.status
-        })
-      );
-    }
-
-    if (parsed.type === "where_all") {
-      const tools = await listAllTools();
-      console.log("ALL TOOLS COUNT:", tools.length);
-
-      const lines = tools.map(
-        (tool) =>
-          `— ${tool.title} (${tool.id}) · объект: ${tool.object_name || "не указан"} · ответственный: ${tool.responsible_name || "нет"} · статус: ${tool.status}`
-      );
-
-      return replyAndOk(res, chatId, allToolsReply(lines));
-    }
-
-    if (parsed.type === "take_tool") {
-      const tool = await findToolByNameOrAlias(parsed.toolName);
-      console.log("FOUND TOOL:", tool);
-
-      if (!tool) {
-        return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
-      }
-
-      const result = await takeTool({
-        toolId: tool.id,
-        actorUserId: knownUser.id,
-        currentObjectId: tool.current_object_id
-      });
-
-      console.log("TAKE RESULT:", result);
-
-      if (result === "already_taken") {
-        return replyAndOk(res, chatId, toolAlreadyTaken(`${tool.title} (${tool.id})`));
-      }
-
-      return replyAndOk(res, chatId, toolTaken(`${tool.title} (${tool.id})`));
-    }
-
-    if (parsed.type === "return_tool") {
-      const tool = await findToolByNameOrAlias(parsed.toolName);
-      console.log("FOUND TOOL:", tool);
-
-      if (!tool) {
-        return replyAndOk(res, chatId, toolNotFound(parsed.toolName));
-      }
-
-      const result = await returnTool({
-        toolId: tool.id,
-        actorUserId: knownUser.id,
-        currentObjectId: tool.current_object_id
-      });
-
-      console.log("RETURN RESULT:", result);
-
-      if (result === "not_in_use") {
-        return replyAndOk(res, chatId, toolNotInUse(`${tool.title} (${tool.id})`));
-      }
-
-      if (result === "held_by_other") {
-        return replyAndOk(res, chatId, toolHeldByOther(`${tool.title} (${tool.id})`));
-      }
-
-      return replyAndOk(res, chatId, toolReturned(`${tool.title} (${tool.id})`));
-    }
-
-    return replyAndOk(res, chatId, unknownCommand(knownUser.name));
-  } catch (error) {
-    console.error("WEBHOOK ERROR:", error);
-    return res.status(500).json({ ok: false });
-  }
-});
+export function unknownCommand(name: string): string {
+  return `${name}, смысл уловил не до конца. Напиши проще.`;
+}
