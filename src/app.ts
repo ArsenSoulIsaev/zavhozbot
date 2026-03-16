@@ -11,6 +11,9 @@ app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
 
+console.log("DATABASE_URL exists:", Boolean(process.env.DATABASE_URL));
+console.log("DATABASE_URL preview:", process.env.DATABASE_URL?.slice(0, 80));
+
 app.listen(config.port, () => {
   console.log(`МахаЗавхоз слушает порт ${config.port}`);
 });
