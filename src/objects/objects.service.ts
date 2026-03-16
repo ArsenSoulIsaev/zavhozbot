@@ -32,16 +32,37 @@ export async function getBaseObject(): Promise<ObjectRow> {
   );
 
   const row = result.rows[0];
-  if (!row) {
-    throw new Error("Объект 'База' не найден");
-  }
+  if (!row) throw new Error("Объект 'База' не найден");
 
   return row;
 }
 
-export async function closeObject(params: {
-  objectId: number;
-}): Promise<"ok" | "already_closed" | "base_forbidden"> {
+export async function createObject(name: string): Promise<ObjectRow> {
+  const result = await query<ObjectRow>(
+    `
+    insert into objects (name, is_active, is_closed)
+    values ($1, false, false)
+    returning id, name, is_active, is_closed
+    `,
+    [name]
+  );
+
+  return result.rows[0];
+}
+
+export async function activateObject(objectId: number): Promise<void> {
+  await query(`update objects set is_active = false where is_active = true`);
+  await query(
+    `
+    update objects
+    set is_active = true, is_closed = false
+    where id = $1
+    `,
+    [objectId]
+  );
+}
+
+export async function closeObject(objectId: number): Promise<"ok" | "already_closed" | "base_forbidden"> {
   const current = await query<ObjectRow>(
     `
     select id, name, is_active, is_closed
@@ -49,21 +70,14 @@ export async function closeObject(params: {
     where id = $1
     limit 1
     `,
-    [params.objectId]
+    [objectId]
   );
 
   const row = current.rows[0];
-  if (!row) {
-    throw new Error("Объект не найден");
-  }
+  if (!row) throw new Error("Объект не найден");
 
-  if (row.name.toLowerCase() === "база") {
-    return "base_forbidden";
-  }
-
-  if (row.is_closed) {
-    return "already_closed";
-  }
+  if (row.name.toLowerCase() === "база") return "base_forbidden";
+  if (row.is_closed) return "already_closed";
 
   const base = await getBaseObject();
 
@@ -75,7 +89,7 @@ export async function closeObject(params: {
         closed_at = now()
     where id = $1
     `,
-    [params.objectId]
+    [objectId]
   );
 
   await query(
