@@ -74,7 +74,26 @@ export async function takeTool(params: {
   toolId: number;
   actorUserId: number;
   currentObjectId: number | null;
-}): Promise<void> {
+}): Promise<"ok" | "already_taken"> {
+  const current = await query<{ responsible_user_id: number | null; status: string }>(
+    `
+    select responsible_user_id, status
+    from tools
+    where id = $1
+    limit 1
+    `,
+    [params.toolId]
+  );
+
+  const row = current.rows[0];
+  if (!row) {
+    throw new Error("Инструмент не найден");
+  }
+
+  if (row.responsible_user_id !== null || row.status === "in_use") {
+    return "already_taken";
+  }
+
   await query(
     `
     update tools
@@ -105,13 +124,38 @@ export async function takeTool(params: {
       "Инструмент взят в работу"
     ]
   );
+
+  return "ok";
 }
 
 export async function returnTool(params: {
   toolId: number;
   actorUserId: number;
   currentObjectId: number | null;
-}): Promise<void> {
+}): Promise<"ok" | "not_in_use" | "held_by_other"> {
+  const current = await query<{ responsible_user_id: number | null; status: string }>(
+    `
+    select responsible_user_id, status
+    from tools
+    where id = $1
+    limit 1
+    `,
+    [params.toolId]
+  );
+
+  const row = current.rows[0];
+  if (!row) {
+    throw new Error("Инструмент не найден");
+  }
+
+  if (row.responsible_user_id === null || row.status === "available") {
+    return "not_in_use";
+  }
+
+  if (row.responsible_user_id !== params.actorUserId) {
+    return "held_by_other";
+  }
+
   await query(
     `
     update tools
@@ -142,4 +186,6 @@ export async function returnTool(params: {
       "Инструмент возвращён"
     ]
   );
+
+  return "ok";
 }
