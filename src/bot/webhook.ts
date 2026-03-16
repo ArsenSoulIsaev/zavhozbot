@@ -1,6 +1,17 @@
 import express from "express";
 import { parseMessage } from "./parser.js";
-import { askSecretWord, authFail, authSuccess, greet, notRegistered } from "./replies.js";
+import {
+  askSecretWord,
+  authFail,
+  authSuccess,
+  greet,
+  notRegistered,
+  toolLocationReply,
+  toolNotFound,
+  toolReturned,
+  toolTaken,
+  unknownCommand
+} from "./replies.js";
 import {
   bindTelegramId,
   findUserByName,
@@ -9,6 +20,12 @@ import {
   verifySecretWord,
   needsReauth
 } from "../auth/auth.service.js";
+import {
+  findToolByNameOrAlias,
+  getToolLocation,
+  returnTool,
+  takeTool
+} from "../tools/tools.service.js";
 
 export const webhookRouter = express.Router();
 
@@ -27,9 +44,9 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
 
     const telegramId = from.id;
     const displayName = from.first_name || from.username || "друг";
-
-    const knownUser = await findUserByTelegramId(telegramId);
     const parsed = parseMessage(text);
+
+    let knownUser = await findUserByTelegramId(telegramId);
 
     if (!knownUser) {
       const pending = pendingAuth.get(telegramId);
@@ -71,16 +88,78 @@ webhookRouter.post("/telegram/webhook", async (req, res) => {
       }
 
       await touchReauth(knownUser.id);
+
       return res.status(200).json({
         reply: `${knownUser.name}, всё сходится. Работаем дальше.`
       });
     }
 
+    if (parsed.type === "where_tool") {
+      const tool = await findToolByNameOrAlias(parsed.toolName);
+
+      if (!tool) {
+        return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
+      }
+
+      const location = await getToolLocation(tool.id);
+
+      if (!location) {
+        return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
+      }
+
+      return res.status(200).json({
+        reply: toolLocationReply({
+          title: `${location.title} (${location.id})`,
+          objectName: location.object_name,
+          responsibleName: location.responsible_name,
+          status: location.status
+        })
+      });
+    }
+
+    if (parsed.type === "take_tool") {
+      const tool = await findToolByNameOrAlias(parsed.toolName);
+
+      if (!tool) {
+        return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
+      }
+
+      await takeTool({
+        toolId: tool.id,
+        actorUserId: knownUser.id,
+        currentObjectId: tool.current_object_id
+      });
+
+      return res.status(200).json({
+        reply: toolTaken(`${tool.title} (${tool.id})`)
+      });
+    }
+
+    if (parsed.type === "return_tool") {
+      const tool = await findToolByNameOrAlias(parsed.toolName);
+
+      if (!tool) {
+        return res.status(200).json({ reply: toolNotFound(parsed.toolName) });
+      }
+
+      await returnTool({
+        toolId: tool.id,
+        actorUserId: knownUser.id,
+        currentObjectId: tool.current_object_id
+      });
+
+      return res.status(200).json({
+        reply: toolReturned(`${tool.title} (${tool.id})`)
+      });
+    }
+
     return res.status(200).json({
-      reply: `${greet()} Пока я понял тебя так: ${parsed.type}.`
+      reply: `${greet()} ${unknownCommand()}`
     });
   } catch (error) {
     console.error(error);
-    return res.status(500).json({ reply: "Что-то заскрипело в механизме. Надо поправить." });
+    return res.status(500).json({
+      reply: "Что-то заскрипело в механизме. Надо поправить."
+    });
   }
 });
