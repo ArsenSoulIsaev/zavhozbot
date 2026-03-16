@@ -48,7 +48,7 @@ const tools = [
 const preregisteredUsers = {
   arsen_soul_isaev: { secret: "Chief", role: "Арсен" },
   volodya: { secret: "volodya123", role: "Сотрудник" },
-  petya: { secret: "petya123", role: "Сотрудник" },
+  Makar108om: { secret: "Вжик", role: "Прораб" },
 };
 
 function normalize(text) {
